@@ -315,6 +315,10 @@
 
 /* ---------- account pool ---------- */
 .dsm-wb-side-count{padding:0 6px;border-radius:999px;background:var(--wb-surface-2);color:var(--wb-text-2);font-size:10.5px;font-weight:600;letter-spacing:.01em;font-variant-numeric:tabular-nums}
+.dsm-wb-side-pool-region{
+  padding:0 6px;border-radius:999px;background:rgba(91,140,255,.14);color:var(--wb-accent);
+  font-size:10px;font-weight:600;letter-spacing:.04em;
+}
 .dsm-wb-side-pool-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 .dsm-wb-side-pool-stat{
   display:flex;flex-direction:column;gap:1px;min-width:0;padding:6px 8px;
@@ -326,6 +330,11 @@
   grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:space-between;gap:10px;
 }
 .dsm-wb-side-pool-stat-credits strong{font-size:13px;line-height:18px}
+.dsm-wb-side-pool-stat-expiring{
+  border-color:rgba(245,158,11,.28);background:rgba(245,158,11,.06);
+}
+.dsm-wb-side-pool-stat-expiring span,
+.dsm-wb-side-pool-stat-expiring strong{color:var(--dsw-alias-state-warning-primary,#f59e0b)}
 /* The pool's own readout - a card of its own, built like the summary tiles
    above it so the two read as one family. auto-fit keeps four columns while
    they fit and folds to fewer when the card is narrow; the figures never
@@ -366,6 +375,10 @@
 .dsm-wb-side-acct-copy{display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0;flex:1}
 .dsm-wb-side-acct-name{color:var(--wb-text);font-size:12.5px;font-weight:500;line-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .dsm-wb-side-acct-meta{color:var(--wb-text-3);font-size:10.5px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.dsm-wb-side-acct-token{
+  color:var(--wb-text-3);font-size:10.5px;line-height:14px;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
 .dsm-wb-side-acct-metrics{
   display:flex;flex-wrap:wrap;gap:1px 8px;color:var(--wb-text-3);
   font-size:10.5px;line-height:14px;font-variant-numeric:tabular-nums;
@@ -647,6 +660,8 @@
 /* ---------- provider row: one line, not a card-sized block ---------- */
 .dsm-wb-side-group-provider .dsm-wb-side-row{gap:8px}
 .dsm-wb-side-tabs-inline{flex:1;min-width:0}
+/* The provider switch now lives on the model card, next to the list it changes. */
+.dsm-wb-side-model-region{flex:none;margin-left:auto}
 
 /* Model capability details stay with their model row and wrap instead of clipping. */
 .dsm-wb-side-model-meta{

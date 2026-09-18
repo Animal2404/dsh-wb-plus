@@ -1,8 +1,8 @@
 diff --git a/lib/client.js b/lib/client.js
-index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f15721402cc8ceba 100644
+index 74852cffe007a586682b33137361ff18aee60d1a..5b938673dff6e4610b52c78778cd7958c08b6eb4 100644
 --- a/lib/client.js
 +++ b/lib/client.js
-@@ -182,6 +182,663 @@ window.__ModuleLoader__.load({
+@@ -182,6 +182,678 @@ window.__ModuleLoader__.load({
  .dsm-workbuddy-usage-cheer-star{font-size:12px;line-height:1;display:inline-flex}
  .dsm-workbuddy-usage-cheer:hover{color:var(--dsw-alias-label-primary,#e6e6e6)}
  .dsm-workbuddy-usage-cheer:focus-visible{outline:2px solid var(--dsw-alias-brand-primary,#5686fe);outline-offset:2px}
@@ -323,6 +323,10 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +
 +/* ---------- account pool ---------- */
 +.dsm-wb-side-count{padding:0 6px;border-radius:999px;background:var(--wb-surface-2);color:var(--wb-text-2);font-size:10.5px;font-weight:600;letter-spacing:.01em;font-variant-numeric:tabular-nums}
++.dsm-wb-side-pool-region{
++  padding:0 6px;border-radius:999px;background:rgba(91,140,255,.14);color:var(--wb-accent);
++  font-size:10px;font-weight:600;letter-spacing:.04em;
++}
 +.dsm-wb-side-pool-summary{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:6px}
 +.dsm-wb-side-pool-stat{
 +  display:flex;flex-direction:column;gap:1px;min-width:0;padding:6px 8px;
@@ -334,6 +338,11 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +  grid-column:1 / -1;flex-direction:row;align-items:center;justify-content:space-between;gap:10px;
 +}
 +.dsm-wb-side-pool-stat-credits strong{font-size:13px;line-height:18px}
++.dsm-wb-side-pool-stat-expiring{
++  border-color:rgba(245,158,11,.28);background:rgba(245,158,11,.06);
++}
++.dsm-wb-side-pool-stat-expiring span,
++.dsm-wb-side-pool-stat-expiring strong{color:var(--dsw-alias-state-warning-primary,#f59e0b)}
 +/* The pool's own readout - a card of its own, built like the summary tiles
 +   above it so the two read as one family. auto-fit keeps four columns while
 +   they fit and folds to fewer when the card is narrow; the figures never
@@ -374,6 +383,10 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +.dsm-wb-side-acct-copy{display:flex;flex-direction:column;justify-content:center;gap:1px;min-width:0;flex:1}
 +.dsm-wb-side-acct-name{color:var(--wb-text);font-size:12.5px;font-weight:500;line-height:17px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 +.dsm-wb-side-acct-meta{color:var(--wb-text-3);font-size:10.5px;line-height:14px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
++.dsm-wb-side-acct-token{
++  color:var(--wb-text-3);font-size:10.5px;line-height:14px;
++  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
++}
 +.dsm-wb-side-acct-metrics{
 +  display:flex;flex-wrap:wrap;gap:1px 8px;color:var(--wb-text-3);
 +  font-size:10.5px;line-height:14px;font-variant-numeric:tabular-nums;
@@ -655,6 +668,8 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +/* ---------- provider row: one line, not a card-sized block ---------- */
 +.dsm-wb-side-group-provider .dsm-wb-side-row{gap:8px}
 +.dsm-wb-side-tabs-inline{flex:1;min-width:0}
++/* The provider switch now lives on the model card, next to the list it changes. */
++.dsm-wb-side-model-region{flex:none;margin-left:auto}
 +
 +/* Model capability details stay with their model row and wrap instead of clipping. */
 +.dsm-wb-side-model-meta{
@@ -666,7 +681,7 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
  `;
  		//#endregion
  		//#region src/client/WorkBuddyCard.tsx
-@@ -997,6 +1654,2643 @@ window.__ModuleLoader__.load({
+@@ -997,6 +1669,2699 @@ window.__ModuleLoader__.load({
  			"row.cheer": "鼓励一下"
  		};
  		//#endregion
@@ -763,6 +778,9 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +			modelEfforts: "档位",
 +			modelContext: "最大上下文",
 +			modelOutput: "最大输出",
++			tokenExpires: "令牌到期",
++			tokenAutoRenew: "自动续期",
++			poolExpiring3d: "近 3 天到期",
 +			scan: "扫描添加账号",
 +			scanning: "扫描中",
 +			poolEmpty: "未发现账号：点「添加账号」生成登录链接，登录后自动入池",
@@ -891,6 +909,9 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +			modelEfforts: "Efforts",
 +			modelContext: "Max context",
 +			modelOutput: "Max output",
++			tokenExpires: "Token expires",
++			tokenAutoRenew: "auto-renew",
++			poolExpiring3d: "Expiring in 3d",
 +			scan: "Scan for accounts",
 +			scanning: "Scanning",
 +			poolEmpty: "No accounts yet. Add one and sign in from the generated link.",
@@ -963,6 +984,24 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +		function reasoningDefaultOf(model) {
 +			const effort = model?.reasoning?.defaultEffort;
 +			return typeof effort === "string" && effort !== "" ? effort : void 0;
++		}
++		/**
++		* Default thinking strength shown on a model row.
++		*
++		* The panel's rule is "max when the model actually supports max": the
++		* upstream ladder is the source of truth, so a model that only advertises
++		* high/medium/off keeps its own default instead of being mislabelled max.
++		*/
++		function displayDefaultEffortOf(model) {
++			const efforts = reasoningEffortsOf(model);
++			if (efforts.includes("max")) return "max";
++			return reasoningDefaultOf(model);
++		}
++		/** All advertised effort ids, from either upstream reasoning shape. */
++		function reasoningEffortsOf(model) {
++			const reasoning = model?.reasoning;
++			if (reasoning === void 0 || reasoning === null) return [];
++			return Array.isArray(reasoning.efforts) ? reasoning.efforts.map((effort) => effort?.id).filter((id) => typeof id === "string") : Array.isArray(reasoning.supportedEfforts) ? reasoning.supportedEfforts.filter((id) => typeof id === "string") : [];
 +		}
 +		/**
 +		* Contains render failures to the panel body.
@@ -1286,6 +1325,13 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +	const clock = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 +	const sameDay = at.getFullYear() === new Date(now).getFullYear() && at.getMonth() === new Date(now).getMonth() && at.getDate() === new Date(now).getDate();
 +	return sameDay ? clock : `${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${clock}`;
++}
++/** Absolute token expiry for an account row, e.g. `2026/10/29 07:26`. */
++function formatSidebarTokenExpiry(value) {
++	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return void 0;
++	const at = new Date(value);
++	const pad = (number) => String(number).padStart(2, "0");
++	return `${at.getFullYear()}/${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 +}
 +/** Human age for the most recent successful model call. */
 +function formatSidebarLastSuccess(value, now = Date.now()) {
@@ -2180,6 +2226,23 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +			const poolCreditSum = accounts.reduce((sum, account) => sum + (typeof poolCredits[account.id] === "number" && Number.isFinite(poolCredits[account.id]) ? poolCredits[account.id] : 0), 0);
 +			const poolCreditCapacity = accounts.reduce((sum, account) => sum + (typeof poolDetails[account.id]?.creditsTotal === "number" && Number.isFinite(poolDetails[account.id].creditsTotal) ? poolDetails[account.id].creditsTotal : 0), 0);
 +			/**
++			* Credits that expire within the next three days, summed over the pool.
++			*
++			* The upstream packages carry an absolute expiry; a package with no expiry
++			* is not counted. The window is inclusive of the current moment and uses
++			* the account's remaining amount, which is what the user can still lose.
++			*/
++			const poolExpiring3dCutoff = Date.now() + 3 * 864e5;
++			const poolExpiring3d = accounts.reduce((sum, account) => {
++				const packages = poolDetails[account.id]?.packages;
++				if (!Array.isArray(packages)) return sum;
++				return sum + packages.reduce((subtotal, pack) => {
++					const expiresAtMs = typeof pack?.expiresAtMs === "number" && Number.isFinite(pack.expiresAtMs) ? pack.expiresAtMs : 0;
++					if (expiresAtMs <= 0 || expiresAtMs > poolExpiring3dCutoff) return subtotal;
++					return subtotal + (typeof pack?.remain === "number" && Number.isFinite(pack.remain) && pack.remain > 0 ? pack.remain : 0);
++				}, 0);
++			}, 0);
++			/**
 +			* The readout under the pool summary: what this region's own model calls
 +			* did. A figure only appears once something measured it - the host ships
 +			* absent, not zero, for a stream that reported nothing.
@@ -2558,34 +2621,6 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 +				className: "dsm-wb-side-col dsm-wb-side-col-summary",
 +				children: [
-+			/* region switch: one compact row, not a card-sized empty block */
-+			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-+				className: "dsm-wb-side-group dsm-wb-side-group-provider",
-+				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-+					className: "dsm-wb-side-row",
-+					children: [
-+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-+							className: "dsm-wb-side-label",
-+							children: copy("region")
-+						}),
-+						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-+							className: "dsm-workbuddy-tabs dsm-wb-side-tabs-inline",
-+							children: WORKBUDDY_SIDEBAR_REGIONS.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-+								type: "button",
-+								className: entry.id === region ? "dsm-workbuddy-tab dsm-workbuddy-tab-active" : "dsm-workbuddy-tab",
-+								"aria-pressed": entry.id === region,
-+								disabled: busy !== "",
-+								onClick: () => {
-+									/* remember the pick: a remount must not snap back to 国内版 */
-+									remember("region", entry.id);
-+									setRegion(entry.id);
-+								},
-+								children: entry.label
-+							}, entry.id))
-+						})
-+					]
-+				})
-+			}),
 +				/* account + rescan */
 +				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 +					className: "dsm-wb-side-group dsm-wb-side-group-credits",
@@ -2727,10 +2762,19 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +							children: [
 +								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 +									className: "dsm-wb-side-label",
-+									children: [copy("pool"), " ", /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-+										className: "dsm-wb-side-count",
-+										children: [String(accounts.length), copy("poolUnit")]
-+									})]
++									children: [
++										copy("pool"),
++										" ",
++										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
++											className: "dsm-wb-side-pool-region",
++											children: region === "cn" ? "CN" : "AI"
++										}),
++										" ",
++										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
++											className: "dsm-wb-side-count",
++											children: [String(accounts.length), copy("poolUnit")]
++										})
++									]
 +								}),
 +								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 +									className: "dsm-wb-side-actions",
@@ -2789,6 +2833,13 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
 +											children: poolCreditCapacity > 0 ? `${formatSidebarCredits(poolCreditSum)} / ${formatSidebarCredits(poolCreditCapacity)}` : formatSidebarCredits(poolCreditSum)
 +										})
++									]
++								}),
++								poolExpiring3d === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
++									className: "dsm-wb-side-pool-stat dsm-wb-side-pool-stat-credits dsm-wb-side-pool-stat-expiring",
++									children: [
++										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: copy("poolExpiring3d") }),
++										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: formatSidebarCredits(poolExpiring3d) })
 +									]
 +								})
 +							]
@@ -2914,6 +2965,7 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +								const successRate = completedCalls === 0 ? void 0 : Math.round((stats?.successes ?? 0) / completedCalls * 100);
 +								const inFlight = stats?.inFlight ?? 0;
 +								const lastSuccess = formatSidebarLastSuccess(stats?.lastSuccessAt);
++								const tokenExpiry = formatSidebarTokenExpiry(account.tokenExpiresAtMs);
 +								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 +									className: `dsm-wb-side-acct${isCurrent ? " dsm-wb-side-acct-on" : ""}${cooling ? " dsm-wb-side-acct-cool" : ""}`,
 +									"data-current": isCurrent ? "true" : void 0,
@@ -2945,6 +2997,10 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +														meta === "" ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 +															className: "dsm-wb-side-acct-meta",
 +															children: meta
++														}),
++														tokenExpiry === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
++															className: "dsm-wb-side-acct-token",
++															children: `${copy("tokenExpires")} ${tokenExpiry}（${copy("tokenAutoRenew")}）`
 +														}),
 +														/* Live model-call health stays on the account row, where the
 +														   user makes the switching decision. */
@@ -3070,6 +3126,21 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +									className: "dsm-wb-side-label",
 +									children: copy("model")
 +								}),
++								/* provider switch lives with the model list it changes */
++								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
++									className: "dsm-workbuddy-tabs dsm-wb-side-tabs-inline dsm-wb-side-model-region",
++									children: WORKBUDDY_SIDEBAR_REGIONS.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
++										type: "button",
++										className: entry.id === region ? "dsm-workbuddy-tab dsm-workbuddy-tab-active" : "dsm-workbuddy-tab",
++										"aria-pressed": entry.id === region,
++										disabled: busy !== "",
++										onClick: () => {
++											remember("region", entry.id);
++											setRegion(entry.id);
++										},
++										children: entry.label
++									}, entry.id))
++								}),
 +								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 +									type: "button",
 +									className: "dsm-btn dsm-btn-outline",
@@ -3092,7 +3163,7 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
 +								const budget = contextBudgets[model.id] ?? 2e5;
 +								const busyNow = busy !== "";
 +								const reasoningTag = reasoningTagOf(model);
-+								const reasoningDefault = reasoningDefaultOf(model);
++								const reasoningDefault = displayDefaultEffortOf(model);
 +								const modelHealth = selectedPoolAccount === void 0 ? void 0 : poolModelHealth[selectedPoolAccount.id]?.[model.id];
 +								const modelLimitUntil = formatSidebarCooling(modelHealth?.until);
 +								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
@@ -3310,7 +3381,7 @@ index 74852cffe007a586682b33137361ff18aee60d1a..4ca4bc091a50ea77f12af609f1572140
  		//#region src/client/index.tsx
  		/** Stable browser-plugin name. */
  		const name = "dsh-connect-workbuddy-client";
-@@ -1025,6 +4319,23 @@ window.__ModuleLoader__.load({
+@@ -1025,6 +4390,23 @@ window.__ModuleLoader__.load({
  						settingsScope
  					})
  				}, WorkBuddyCard));
@@ -3385,7 +3456,7 @@ index 263f535936a168d29cd341ba629e5e58dc50a014..c8ce17f07c7da217752e5841ba710134
  	};
  }
 diff --git a/lib/index.js b/lib/index.js
-index 498ed34b33056c20e18eb0b31c94d0d6475a54dc..b178f501d1ac0d1a47c257641a5cc49442ef8683 100644
+index 498ed34b33056c20e18eb0b31c94d0d6475a54dc..c91bf771fa84740297dd1017871794bedb660863 100644
 --- a/lib/index.js
 +++ b/lib/index.js
 @@ -7,6 +7,9 @@ import { resolveRetryPolicy } from "@deepseek-ai/dsh-llm";
@@ -3876,23 +3947,23 @@ index 498ed34b33056c20e18eb0b31c94d0d6475a54dc..b178f501d1ac0d1a47c257641a5cc494
 +	};
 +	if (id.startsWith("deepseek-v4.1-flash")) return {
 +		supportedEfforts: ["low", "high", "max", "off"],
-+		defaultEffort: "high"
++		defaultEffort: "max"
 +	};
 +	if (id.startsWith("deepseek-v4-pro")) return {
 +		supportedEfforts: ["low", "high", "xhigh", "off"],
-+		defaultEffort: "high"
++		defaultEffort: "xhigh"
 +	};
 +	if (id.startsWith("deepseek-v4-flash")) return {
 +		supportedEfforts: ["low", "high", "xhigh", "off"],
-+		defaultEffort: "high"
++		defaultEffort: "xhigh"
 +	};
 +	if (id.startsWith("glm-5.3")) return {
 +		supportedEfforts: ["low", "high", "max", "off"],
-+		defaultEffort: "high"
++		defaultEffort: "max"
 +	};
 +	if (id.startsWith("glm-5.2")) return {
 +		supportedEfforts: ["high", "xhigh", "off"],
-+		defaultEffort: "high"
++		defaultEffort: "xhigh"
 +	};
 +	if (id.startsWith("glm-5.1") || id.startsWith("glm-5v")) return {
 +		supportedEfforts: ["medium"],
@@ -3900,7 +3971,7 @@ index 498ed34b33056c20e18eb0b31c94d0d6475a54dc..b178f501d1ac0d1a47c257641a5cc494
 +	};
 +	if (id.startsWith("kimi-k2.8")) return {
 +		supportedEfforts: ["low", "high", "max", "off"],
-+		defaultEffort: "high"
++		defaultEffort: "max"
 +	};
 +	if (id.startsWith("kimi-k3") || id.startsWith("kimi-k2.7") || id.startsWith("kimi-k2.6") || id.startsWith("minimax")) return {
 +		supportedEfforts: ["medium"],

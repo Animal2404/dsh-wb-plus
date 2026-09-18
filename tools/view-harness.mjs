@@ -111,6 +111,7 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
         { id: 'a1', credits: 2098, creditsTotal: 2400, packages: [
           { packageName: '新人体验包', remain: 1200, size: 1200, monthly: false, expiresAtMs: Date.now() + 86400000 * 7 },
           { packageName: '日常赠送包', remain: 898, size: 1200, monthly: true, cycleRefreshMs: Date.now() + 86400000 * 14 },
+          { packageName: '临期包', remain: 94, size: 500, monthly: false, expiresAtMs: Date.now() + 86400000 * 2 },
         ], checkin: { active: true, todayCheckedIn: false, todayCredit: 100, dailyCredit: 100, streakDays: 3 },
           health: { kind: 'rate', until: COOL_UNTIL, reason: '频率限制，请在 2026-09-17 21:30:00 后重试' } },
         { id: 'a2', credits: 1197, creditsTotal: 1500, packages: [
@@ -164,8 +165,8 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
       credits: { total: 1197, packages: PACKAGES, expiringSoon: 0 },
       checkin: { todayCheckedIn: true, todayCredit: 100, dailyCredit: 100, streakDays: 3 },
       models: MODELS,
-      accounts: [ { id: 'a1', selected: false, accountName: 'Demo Account A', domain: 'www.workbuddy.cn' },
-                  { id: 'a2', selected: true, accountName: 'Demo Account B', domain: 'www.workbuddy.cn' } ] });
+      accounts: [ { id: 'a1', selected: false, accountName: 'Demo Account A', domain: 'www.workbuddy.cn', tokenExpiresAtMs: Date.now() + 86400000 * 41 },
+                  { id: 'a2', selected: true, accountName: 'Demo Account B', domain: 'www.workbuddy.cn', tokenExpiresAtMs: Date.now() + 86400000 * 41 } ] });
     if (u.includes('/accounts/refresh')) return json({ accounts: [{ id: 'a2', selected: true, accountName: 'Demo Account B' }] });
     if (u.includes('/checkin')) return json({ ok: true });
     if (u.includes('/models/refresh')) return json({ models: MODELS });

@@ -91,6 +91,9 @@
 			modelEfforts: "档位",
 			modelContext: "最大上下文",
 			modelOutput: "最大输出",
+			tokenExpires: "令牌到期",
+			tokenAutoRenew: "自动续期",
+			poolExpiring3d: "近 3 天到期",
 			scan: "扫描添加账号",
 			scanning: "扫描中",
 			poolEmpty: "未发现账号：点「添加账号」生成登录链接，登录后自动入池",
@@ -219,6 +222,9 @@
 			modelEfforts: "Efforts",
 			modelContext: "Max context",
 			modelOutput: "Max output",
+			tokenExpires: "Token expires",
+			tokenAutoRenew: "auto-renew",
+			poolExpiring3d: "Expiring in 3d",
 			scan: "Scan for accounts",
 			scanning: "Scanning",
 			poolEmpty: "No accounts yet. Add one and sign in from the generated link.",
@@ -291,6 +297,24 @@
 		function reasoningDefaultOf(model) {
 			const effort = model?.reasoning?.defaultEffort;
 			return typeof effort === "string" && effort !== "" ? effort : void 0;
+		}
+		/**
+		* Default thinking strength shown on a model row.
+		*
+		* The panel's rule is "max when the model actually supports max": the
+		* upstream ladder is the source of truth, so a model that only advertises
+		* high/medium/off keeps its own default instead of being mislabelled max.
+		*/
+		function displayDefaultEffortOf(model) {
+			const efforts = reasoningEffortsOf(model);
+			if (efforts.includes("max")) return "max";
+			return reasoningDefaultOf(model);
+		}
+		/** All advertised effort ids, from either upstream reasoning shape. */
+		function reasoningEffortsOf(model) {
+			const reasoning = model?.reasoning;
+			if (reasoning === void 0 || reasoning === null) return [];
+			return Array.isArray(reasoning.efforts) ? reasoning.efforts.map((effort) => effort?.id).filter((id) => typeof id === "string") : Array.isArray(reasoning.supportedEfforts) ? reasoning.supportedEfforts.filter((id) => typeof id === "string") : [];
 		}
 		/**
 		* Contains render failures to the panel body.
@@ -614,6 +638,13 @@ function formatSidebarCooling(untilMs, now = Date.now()) {
 	const clock = `${pad(at.getHours())}:${pad(at.getMinutes())}`;
 	const sameDay = at.getFullYear() === new Date(now).getFullYear() && at.getMonth() === new Date(now).getMonth() && at.getDate() === new Date(now).getDate();
 	return sameDay ? clock : `${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${clock}`;
+}
+/** Absolute token expiry for an account row, e.g. `2026/10/29 07:26`. */
+function formatSidebarTokenExpiry(value) {
+	if (typeof value !== "number" || !Number.isFinite(value) || value <= 0) return void 0;
+	const at = new Date(value);
+	const pad = (number) => String(number).padStart(2, "0");
+	return `${at.getFullYear()}/${pad(at.getMonth() + 1)}/${pad(at.getDate())} ${pad(at.getHours())}:${pad(at.getMinutes())}`;
 }
 /** Human age for the most recent successful model call. */
 function formatSidebarLastSuccess(value, now = Date.now()) {
@@ -1508,6 +1539,23 @@ function workBuddyDockClearance() {
 			const poolCreditSum = accounts.reduce((sum, account) => sum + (typeof poolCredits[account.id] === "number" && Number.isFinite(poolCredits[account.id]) ? poolCredits[account.id] : 0), 0);
 			const poolCreditCapacity = accounts.reduce((sum, account) => sum + (typeof poolDetails[account.id]?.creditsTotal === "number" && Number.isFinite(poolDetails[account.id].creditsTotal) ? poolDetails[account.id].creditsTotal : 0), 0);
 			/**
+			* Credits that expire within the next three days, summed over the pool.
+			*
+			* The upstream packages carry an absolute expiry; a package with no expiry
+			* is not counted. The window is inclusive of the current moment and uses
+			* the account's remaining amount, which is what the user can still lose.
+			*/
+			const poolExpiring3dCutoff = Date.now() + 3 * 864e5;
+			const poolExpiring3d = accounts.reduce((sum, account) => {
+				const packages = poolDetails[account.id]?.packages;
+				if (!Array.isArray(packages)) return sum;
+				return sum + packages.reduce((subtotal, pack) => {
+					const expiresAtMs = typeof pack?.expiresAtMs === "number" && Number.isFinite(pack.expiresAtMs) ? pack.expiresAtMs : 0;
+					if (expiresAtMs <= 0 || expiresAtMs > poolExpiring3dCutoff) return subtotal;
+					return subtotal + (typeof pack?.remain === "number" && Number.isFinite(pack.remain) && pack.remain > 0 ? pack.remain : 0);
+				}, 0);
+			}, 0);
+			/**
 			* The readout under the pool summary: what this region's own model calls
 			* did. A figure only appears once something measured it - the host ships
 			* absent, not zero, for a stream that reported nothing.
@@ -1886,34 +1934,6 @@ function workBuddyDockClearance() {
 			/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 				className: "dsm-wb-side-col dsm-wb-side-col-summary",
 				children: [
-			/* region switch: one compact row, not a card-sized empty block */
-			/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-				className: "dsm-wb-side-group dsm-wb-side-group-provider",
-				children: /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
-					className: "dsm-wb-side-row",
-					children: [
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-							className: "dsm-wb-side-label",
-							children: copy("region")
-						}),
-						/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
-							className: "dsm-workbuddy-tabs dsm-wb-side-tabs-inline",
-							children: WORKBUDDY_SIDEBAR_REGIONS.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
-								type: "button",
-								className: entry.id === region ? "dsm-workbuddy-tab dsm-workbuddy-tab-active" : "dsm-workbuddy-tab",
-								"aria-pressed": entry.id === region,
-								disabled: busy !== "",
-								onClick: () => {
-									/* remember the pick: a remount must not snap back to 国内版 */
-									remember("region", entry.id);
-									setRegion(entry.id);
-								},
-								children: entry.label
-							}, entry.id))
-						})
-					]
-				})
-			}),
 				/* account + rescan */
 				/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 					className: "dsm-wb-side-group dsm-wb-side-group-credits",
@@ -2055,10 +2075,19 @@ function workBuddyDockClearance() {
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "dsm-wb-side-label",
-									children: [copy("pool"), " ", /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-										className: "dsm-wb-side-count",
-										children: [String(accounts.length), copy("poolUnit")]
-									})]
+									children: [
+										copy("pool"),
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+											className: "dsm-wb-side-pool-region",
+											children: region === "cn" ? "CN" : "AI"
+										}),
+										" ",
+										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+											className: "dsm-wb-side-count",
+											children: [String(accounts.length), copy("poolUnit")]
+										})
+									]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "dsm-wb-side-actions",
@@ -2117,6 +2146,13 @@ function workBuddyDockClearance() {
 										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", {
 											children: poolCreditCapacity > 0 ? `${formatSidebarCredits(poolCreditSum)} / ${formatSidebarCredits(poolCreditCapacity)}` : formatSidebarCredits(poolCreditSum)
 										})
+									]
+								}),
+								poolExpiring3d === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
+									className: "dsm-wb-side-pool-stat dsm-wb-side-pool-stat-credits dsm-wb-side-pool-stat-expiring",
+									children: [
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", { children: copy("poolExpiring3d") }),
+										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("strong", { children: formatSidebarCredits(poolExpiring3d) })
 									]
 								})
 							]
@@ -2242,6 +2278,7 @@ function workBuddyDockClearance() {
 								const successRate = completedCalls === 0 ? void 0 : Math.round((stats?.successes ?? 0) / completedCalls * 100);
 								const inFlight = stats?.inFlight ?? 0;
 								const lastSuccess = formatSidebarLastSuccess(stats?.lastSuccessAt);
+								const tokenExpiry = formatSidebarTokenExpiry(account.tokenExpiresAtMs);
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: `dsm-wb-side-acct${isCurrent ? " dsm-wb-side-acct-on" : ""}${cooling ? " dsm-wb-side-acct-cool" : ""}`,
 									"data-current": isCurrent ? "true" : void 0,
@@ -2273,6 +2310,10 @@ function workBuddyDockClearance() {
 														meta === "" ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 															className: "dsm-wb-side-acct-meta",
 															children: meta
+														}),
+														tokenExpiry === void 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															className: "dsm-wb-side-acct-token",
+															children: `${copy("tokenExpires")} ${tokenExpiry}（${copy("tokenAutoRenew")}）`
 														}),
 														/* Live model-call health stays on the account row, where the
 														   user makes the switching decision. */
@@ -2398,6 +2439,21 @@ function workBuddyDockClearance() {
 									className: "dsm-wb-side-label",
 									children: copy("model")
 								}),
+								/* provider switch lives with the model list it changes */
+								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
+									className: "dsm-workbuddy-tabs dsm-wb-side-tabs-inline dsm-wb-side-model-region",
+									children: WORKBUDDY_SIDEBAR_REGIONS.map((entry) => /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										type: "button",
+										className: entry.id === region ? "dsm-workbuddy-tab dsm-workbuddy-tab-active" : "dsm-workbuddy-tab",
+										"aria-pressed": entry.id === region,
+										disabled: busy !== "",
+										onClick: () => {
+											remember("region", entry.id);
+											setRegion(entry.id);
+										},
+										children: entry.label
+									}, entry.id))
+								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 									type: "button",
 									className: "dsm-btn dsm-btn-outline",
@@ -2420,7 +2476,7 @@ function workBuddyDockClearance() {
 								const budget = contextBudgets[model.id] ?? 2e5;
 								const busyNow = busy !== "";
 								const reasoningTag = reasoningTagOf(model);
-								const reasoningDefault = reasoningDefaultOf(model);
+								const reasoningDefault = displayDefaultEffortOf(model);
 								const modelHealth = selectedPoolAccount === void 0 ? void 0 : poolModelHealth[selectedPoolAccount.id]?.[model.id];
 								const modelLimitUntil = formatSidebarCooling(modelHealth?.until);
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {

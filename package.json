@@ -2,7 +2,7 @@
   "name": "dsh-wb-plus",
   "displayName": "DSH WorkBuddy Plus",
   "description": "Community-enhanced WorkBuddy provider for DeepSeek Harness: dual CN/global pools, account credits, usage analytics, model limits and a full management panel.",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "private": true,
   "type": "module",
   "license": "MIT",
@@ -55,7 +55,8 @@
     "test:health": "node tests/chat-refusal-health-test.mjs && node tests/cooldown-survives-credits-test.mjs",
     "test:usage": "node tests/usage-ledger-test.mjs && node tests/usage-persistence-test.mjs",
     "render:harness": "node tools/view-harness.mjs lib/client.js sidebar/panel.css tools/harness.html",
-    "render:check": "node tools/model-health-view-test.mjs tools/harness.html"
+    "render:check": "node tools/model-health-view-test.mjs tools/harness.html",
+    "render:round34": "node tools/round34-view-test.mjs tools/harness.html"
   },
   "dsh": {
     "bundle": {
