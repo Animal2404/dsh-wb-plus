@@ -675,6 +675,51 @@ function normalizeSidebarPoolStats(raw) {
 	}
 	return out;
 }
+/**
+* Composite key for a pooled account.
+*
+* The pool now aggregates both providers, so an account id alone is no longer
+* unique enough: the same WorkBuddy login can exist in CN and global with the
+* same derived id. Keying by region + id keeps their credits, stats and limits
+* apart without changing the host routes.
+*/
+function sidebarPoolKey(region, accountId) {
+	return `${region}\u0000${accountId}`;
+}
+/**
+* Merge several regions' pool totals into one readout.
+*
+* Counts and token sums add up. The two averages are weighted - first-token by
+* call count, speed by tokens generated - because a plain mean of means would
+* let a barely-used region skew the headline.
+*/
+function mergeSidebarPoolTotals(list) {
+	let calls = 0;
+	let totalTokens = 0;
+	let firstTokenWeighted = 0;
+	let firstTokenWeight = 0;
+	let speedWeighted = 0;
+	let speedWeight = 0;
+	for (const totals of list) {
+		if (totals === null || typeof totals !== "object") continue;
+		if (typeof totals.calls === "number" && Number.isFinite(totals.calls)) calls += totals.calls;
+		if (typeof totals.totalTokens === "number" && Number.isFinite(totals.totalTokens)) totalTokens += totals.totalTokens;
+		if (typeof totals.firstTokenMs === "number" && totals.firstTokenMs > 0 && typeof totals.calls === "number" && totals.calls > 0) {
+			firstTokenWeighted += totals.firstTokenMs * totals.calls;
+			firstTokenWeight += totals.calls;
+		}
+		if (typeof totals.tokensPerSecond === "number" && totals.tokensPerSecond > 0 && typeof totals.totalTokens === "number" && totals.totalTokens > 0) {
+			speedWeighted += totals.tokensPerSecond * totals.totalTokens;
+			speedWeight += totals.totalTokens;
+		}
+	}
+	return {
+		calls,
+		...firstTokenWeight === 0 ? {} : { firstTokenMs: Math.round(firstTokenWeighted / firstTokenWeight) },
+		...speedWeight === 0 ? {} : { tokensPerSecond: Math.round(speedWeighted / speedWeight * 10) / 10 },
+		...totalTokens === 0 ? {} : { totalTokens }
+	};
+}
 /** Model-scoped limits, keyed account -> model, before they reach React. */
 function normalizeSidebarPoolModelHealth(raw) {
 	const out = {};
@@ -923,9 +968,8 @@ function workBuddyDockClearance() {
 				   them: this is the request that costs an upstream round trip, so it must
 				   not also pay for the fast call's latency. Region is explicit so a switch
 				   can never address the provider we just left. */
-				void loadPoolCredits({
-					region: target
-				});
+				/* the pool aggregates both providers; this refresh is not region-scoped */
+				void loadPoolCredits();
 				/* the 积分卡's two upstream-backed fields, fetched in parallel */
 				const summaryPromise = loadUsageSummary(target).catch(() => void 0);
 				/**
@@ -986,11 +1030,9 @@ function workBuddyDockClearance() {
 				setFetched(Array.isArray(usage?.models) ? usage.models : []);
 				setEnabledIds(Array.isArray(usage?.enabledModelIds) ? usage.enabledModelIds : []);
 				setImageIds(Array.isArray(usage?.imageModelIds) ? usage.imageModelIds : []);
-				setAccounts(Array.isArray(usage?.accounts) ? usage.accounts : []);
 				WORKBUDDY_PANEL_CACHE.fetched = Array.isArray(usage?.models) ? usage.models : [];
 				WORKBUDDY_PANEL_CACHE.enabledIds = Array.isArray(usage?.enabledModelIds) ? usage.enabledModelIds : [];
 				WORKBUDDY_PANEL_CACHE.imageIds = Array.isArray(usage?.imageModelIds) ? usage.imageModelIds : [];
-				WORKBUDDY_PANEL_CACHE.accounts = Array.isArray(usage?.accounts) ? usage.accounts : [];
 				// Context budgets are a settings value for this region, not a field of
 				// the usage document (the settings card reads them the same way).
 				const configuredRegions = settingsScope?.getSnapshot?.().value?.regions;
@@ -1026,14 +1068,8 @@ function workBuddyDockClearance() {
 					WORKBUDDY_PANEL_CACHE.fetched = [];
 					WORKBUDDY_PANEL_CACHE.enabledIds = [];
 					WORKBUDDY_PANEL_CACHE.imageIds = [];
-					WORKBUDDY_PANEL_CACHE.accounts = [];
-					WORKBUDDY_PANEL_CACHE.poolCredits = {};
-					WORKBUDDY_PANEL_CACHE.poolStats = {};
-					WORKBUDDY_PANEL_CACHE.poolTotals = {};
-					WORKBUDDY_PANEL_CACHE.poolDetails = {};
-					WORKBUDDY_PANEL_CACHE.poolHealth = {};
-					WORKBUDDY_PANEL_CACHE.poolModelHealth = {};
-					WORKBUDDY_PANEL_CACHE.poolCheckin = {};
+					/* the pool is cross-region now: its data stays put across a
+					   model-region switch, only the model column changes */
 					WORKBUDDY_PANEL_CACHE.usageStats = void 0;
 					WORKBUDDY_PANEL_CACHE.region = region;
 					setStatus(void 0);
@@ -1042,15 +1078,9 @@ function workBuddyDockClearance() {
 					setFetched([]);
 					setEnabledIds([]);
 					setImageIds([]);
-					setAccounts([]);
-					setPoolCredits({});
-					setPoolStats({});
-					setPoolTotals({});
-					setPoolModelHealth({});
 					/* usage is not region-scoped, but a provider switch resets the readout
 					   so a stale window from the other provider never flashes */
 					setUsageStats(normalizeSidebarUsage(void 0));
-					setPoolDetails({});
 					setCreditsError(void 0);
 					setContextBudgets({});
 					setSelected(void 0);
@@ -1091,59 +1121,120 @@ function workBuddyDockClearance() {
 			};
 			/** Run one labelled action with its own busy state and error surface. */
 			/**
-			* Read every pooled account's own credits for this region. A failure keeps
-			* whatever was last shown instead of blanking the numbers.
+			* Read one region's pool document. The pool route is per-region on the
+			* host, so the aggregate below calls it once per provider.
 			*/
-			const loadPoolCredits = (0, react.useCallback)(async (options) => {
-				const quiet = options?.silent === true;
-				/* an explicit region wins: a caller reacting to a provider switch knows
-				   which provider it wants and must not read a stale closed-over value */
-				const forRegion = typeof options?.region === "string" && options.region !== "" ? options.region : region;
-				try {
-					const response = await fetch(`${WORKBUDDY_POOL_CREDITS_PATH}?region=${forRegion}`, {
-						headers: {
-							accept: "application/json"
-						},
-						credentials: "same-origin"
-					});
-					const body = await response.json().catch(() => void 0);
-					if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`);
-					const next = {};
-					const health = {};
-					const modelHealth = normalizeSidebarPoolModelHealth(body?.modelHealth);
-					const checkin = {};
-					const details = {};
-					for (const entry of Array.isArray(body?.accounts) ? body.accounts : []) {
+			const fetchPoolRegion = async (forRegion) => {
+				const response = await fetch(`${WORKBUDDY_POOL_CREDITS_PATH}?region=${forRegion}`, {
+					headers: {
+						accept: "application/json"
+					},
+					credentials: "same-origin"
+				});
+				const body = await response.json().catch(() => void 0);
+				if (!response.ok) throw new Error(body?.error ?? `HTTP ${response.status}`);
+				return body;
+			};
+			/**
+			* Fold both providers' pool documents into one set of maps.
+			*
+			* Every map is keyed `region\u0000accountId`: the same login can appear
+			* in CN and global, and their credits/stats/limits must not collide. The
+			* returned account rows carry their own `region` so switching, check-in
+			* and add-account can still address the right provider.
+			*/
+			const mergePoolPayloads = (payloads) => {
+				const nextAccounts = [];
+				const nextCredits = {};
+				const nextStats = {};
+				const nextHealth = {};
+				const nextModelHealth = {};
+				const nextCheckin = {};
+				const nextDetails = {};
+				const totalsList = [];
+				for (const payload of payloads) {
+					if (payload === null || typeof payload !== "object") continue;
+					const forRegion = payload.region;
+					const body = payload.body;
+					if (body === null || typeof body !== "object") continue;
+					for (const entry of Array.isArray(body.accounts) ? body.accounts : []) {
 						if (typeof entry?.id !== "string") continue;
-						next[entry.id] = typeof entry.credits === "number" && Number.isFinite(entry.credits) ? entry.credits : void 0;
+						const key = sidebarPoolKey(forRegion, entry.id);
+						nextAccounts.push({
+							...entry,
+							id: key,
+							accountId: entry.id,
+							region: forRegion
+						});
+						nextCredits[key] = typeof entry.credits === "number" && Number.isFinite(entry.credits) ? entry.credits : void 0;
 						const packages = Array.isArray(entry.packages) ? entry.packages.filter((pack) => pack !== null && typeof pack === "object") : [];
 						const creditsTotal = typeof entry.creditsTotal === "number" && Number.isFinite(entry.creditsTotal) ? entry.creditsTotal : packages.reduce((sum, pack) => sum + (typeof pack.size === "number" && Number.isFinite(pack.size) ? pack.size : 0), 0);
-						details[entry.id] = {
+						nextDetails[key] = {
 							packages,
 							creditsTotal
 						};
-						if (entry.checkin !== void 0) checkin[entry.id] = entry.checkin;
-						if (entry.health !== void 0) health[entry.id] = entry.health;
+						if (entry.checkin !== void 0) nextCheckin[key] = entry.checkin;
 					}
+					for (const [id, value] of Object.entries(normalizeSidebarPoolStats(body.stats))) nextStats[sidebarPoolKey(forRegion, id)] = value;
+					for (const [id, value] of Object.entries(body.health !== null && typeof body.health === "object" ? body.health : {})) nextHealth[sidebarPoolKey(forRegion, id)] = value;
+					for (const [id, value] of Object.entries(normalizeSidebarPoolModelHealth(body.modelHealth))) nextModelHealth[sidebarPoolKey(forRegion, id)] = value;
+					totalsList.push(normalizeSidebarPoolTotals(body.totals));
+				}
+				return {
+					accounts: nextAccounts,
+					credits: nextCredits,
+					stats: nextStats,
+					health: nextHealth,
+					modelHealth: nextModelHealth,
+					checkin: nextCheckin,
+					details: nextDetails,
+					totals: mergeSidebarPoolTotals(totalsList)
+				};
+			};
+			/**
+			* Read every pooled account of BOTH providers. The pool is one shared
+			* surface: the region switch above only changes the model list, never
+			* which accounts are counted. A failure in one region still shows the
+			* other; a total failure keeps the last good figures.
+			*/
+			const loadPoolCredits = (0, react.useCallback)(async (options) => {
+				const quiet = options?.silent === true;
+				try {
+					const payloads = await Promise.all(WORKBUDDY_SIDEBAR_REGIONS.map(async (entry) => {
+						try {
+							return {
+								region: entry.id,
+								body: await fetchPoolRegion(entry.id)
+							};
+						} catch {
+							return {
+								region: entry.id,
+								body: void 0
+							};
+						}
+					}));
 					if (!mounted.current) return;
-				setPoolCredits(next);
-				setPoolStats(normalizeSidebarPoolStats(body?.stats));
-				setPoolTotals(normalizeSidebarPoolTotals(body?.totals));
-				setPoolDetails(details);
-				setPoolHealth({...health, ...body?.health ?? {}});
-				setPoolModelHealth(modelHealth);
-				setPoolCheckin(checkin);
-				/* remember the last good figures so a remount after a tab switch paints
-				   them immediately instead of an empty shell */
-				WORKBUDDY_PANEL_CACHE.poolCredits = next;
-				WORKBUDDY_PANEL_CACHE.poolStats = normalizeSidebarPoolStats(body?.stats);
-				WORKBUDDY_PANEL_CACHE.poolTotals = normalizeSidebarPoolTotals(body?.totals);
-				WORKBUDDY_PANEL_CACHE.poolDetails = details;
-				WORKBUDDY_PANEL_CACHE.poolHealth = {...health, ...body?.health ?? {}};
-				WORKBUDDY_PANEL_CACHE.poolModelHealth = modelHealth;
-				WORKBUDDY_PANEL_CACHE.poolCheckin = checkin;
-				WORKBUDDY_PANEL_CACHE.region = forRegion;
-				WORKBUDDY_PANEL_CACHE.warm = true;
+					const merged = mergePoolPayloads(payloads);
+					if (merged.accounts.length === 0 && payloads.every((payload) => payload.body === void 0)) throw new Error(copy("requestFailed"));
+					setAccounts(merged.accounts);
+					setPoolCredits(merged.credits);
+					setPoolStats(merged.stats);
+					setPoolTotals(merged.totals);
+					setPoolDetails(merged.details);
+					setPoolHealth(merged.health);
+					setPoolModelHealth(merged.modelHealth);
+					setPoolCheckin(merged.checkin);
+					/* remember the last good figures so a remount after a tab switch paints
+					   them immediately instead of an empty shell */
+					WORKBUDDY_PANEL_CACHE.accounts = merged.accounts;
+					WORKBUDDY_PANEL_CACHE.poolCredits = merged.credits;
+					WORKBUDDY_PANEL_CACHE.poolStats = merged.stats;
+					WORKBUDDY_PANEL_CACHE.poolTotals = merged.totals;
+					WORKBUDDY_PANEL_CACHE.poolDetails = merged.details;
+					WORKBUDDY_PANEL_CACHE.poolHealth = merged.health;
+					WORKBUDDY_PANEL_CACHE.poolModelHealth = merged.modelHealth;
+					WORKBUDDY_PANEL_CACHE.poolCheckin = merged.checkin;
+					WORKBUDDY_PANEL_CACHE.warm = true;
 					if (!quiet) setCreditsError(void 0);
 				} catch (err) {
 					if (!mounted.current) return;
@@ -1154,29 +1245,52 @@ function workBuddyDockClearance() {
 					*/
 					if (!quiet) setCreditsError(err instanceof Error ? err.message : copy("requestFailed"));
 				}
-			}, [region]);
+			}, []);
 			/** Memory-only live tick; failures leave the last good stats untouched. */
 			const loadPoolStats = (0, react.useCallback)(async () => {
 				try {
-					const response = await fetch(`${WORKBUDDY_POOL_STATS_PATH}?region=${region}`, {
-						headers: {
-							accept: "application/json"
-						},
-						credentials: "same-origin"
-					});
-					const body = await response.json().catch(() => void 0);
-					if (!response.ok) return;
+					const results = await Promise.all(WORKBUDDY_SIDEBAR_REGIONS.map(async (entry) => {
+						try {
+							const response = await fetch(`${WORKBUDDY_POOL_STATS_PATH}?region=${entry.id}`, {
+								headers: {
+									accept: "application/json"
+								},
+								credentials: "same-origin"
+							});
+							const body = await response.json().catch(() => void 0);
+							return response.ok ? {
+								region: entry.id,
+								body
+							} : {
+								region: entry.id,
+								body: void 0
+							};
+						} catch {
+							return {
+								region: entry.id,
+								body: void 0
+							};
+						}
+					}));
 					if (!mounted.current) return;
-					setPoolStats(normalizeSidebarPoolStats(body?.stats));
-					setPoolTotals(normalizeSidebarPoolTotals(body?.totals));
-					setPoolModelHealth(normalizeSidebarPoolModelHealth(body?.modelHealth));
-					WORKBUDDY_PANEL_CACHE.poolStats = normalizeSidebarPoolStats(body?.stats);
-					WORKBUDDY_PANEL_CACHE.poolTotals = normalizeSidebarPoolTotals(body?.totals);
-					WORKBUDDY_PANEL_CACHE.poolModelHealth = normalizeSidebarPoolModelHealth(body?.modelHealth);
-					WORKBUDDY_PANEL_CACHE.region = region;
+					const stats = {};
+					const modelHealth = {};
+					const totalsList = [];
+					for (const result of results) {
+						if (result.body === void 0) continue;
+						for (const [id, value] of Object.entries(normalizeSidebarPoolStats(result.body.stats))) stats[sidebarPoolKey(result.region, id)] = value;
+						for (const [id, value] of Object.entries(normalizeSidebarPoolModelHealth(result.body.modelHealth))) modelHealth[sidebarPoolKey(result.region, id)] = value;
+						totalsList.push(normalizeSidebarPoolTotals(result.body.totals));
+					}
+					setPoolStats(stats);
+					setPoolTotals(mergeSidebarPoolTotals(totalsList));
+					setPoolModelHealth(modelHealth);
+					WORKBUDDY_PANEL_CACHE.poolStats = stats;
+					WORKBUDDY_PANEL_CACHE.poolTotals = mergeSidebarPoolTotals(totalsList);
+					WORKBUDDY_PANEL_CACHE.poolModelHealth = modelHealth;
 					WORKBUDDY_PANEL_CACHE.warm = true;
 				} catch {}
-			}, [region]);
+			}, []);
 			/**
 			* Read the aggregated usage window. Kept separate from the pool loaders
 			* because it answers a different question and refreshes on its own
@@ -1210,12 +1324,15 @@ function workBuddyDockClearance() {
 			* Check in one named account, or every account in this region at once.
 			* The busy flag is per subject, so one row working never freezes the rest.
 			*/
-			const checkinPool = async (accountId) => {
-				const one = typeof accountId === "string" && accountId !== "";
-				if (one) setCheckinOneBusy(accountId);
+			const checkinPool = async (account) => {
+				const one = account !== void 0 && typeof account === "object" && typeof account.id === "string" && account.id !== "";
+				/* each row knows its own provider: the pool shows both at once */
+				const forRegion = one && typeof account.region === "string" ? account.region : "cn";
+				const accountId = one ? account.accountId ?? account.id : void 0;
+				if (one) setCheckinOneBusy(account.id);
 				else setCheckinAllBusy(true);
 				try {
-					const response = await fetch(`${WORKBUDDY_POOL_CHECKIN_PATH}?region=${region}`, {
+					const response = await fetch(`${WORKBUDDY_POOL_CHECKIN_PATH}?region=${forRegion}`, {
 						method: "POST",
 						headers: {
 							accept: "application/json",
@@ -1229,7 +1346,7 @@ function workBuddyDockClearance() {
 					await loadPoolCredits({
 						silent: true
 					});
-					await reload(region).catch(() => {});
+					await reload(forRegion).catch(() => {});
 				} catch (err) {
 					if (mounted.current) setCreditsError(err instanceof Error ? err.message : copy("requestFailed"));
 				} finally {
@@ -1306,14 +1423,18 @@ function workBuddyDockClearance() {
 			* Only this region's entry is replaced, so the other provider's selection
 			* is untouched.
 			*/
-			const switchAccount = (accountId) => run("account", async () => {
+			const switchAccount = (account) => run("account", async () => {
 				if (settingsScope === void 0 || settingsScope.getSnapshot().writable !== true) throw new Error(copy("notWritable"));
+				/* the pool aggregates both providers, so the row - not the model
+				   region switch - decides which account slot is written */
+				const forRegion = typeof account?.region === "string" ? account.region : region;
+				const accountId = account?.accountId ?? account?.id;
 				const configured = settingsScope.getSnapshot().value ?? {};
 				const configuredAccounts = typeof configured.accounts === "object" && configured.accounts !== null ? configured.accounts : {};
-				if (configuredAccounts[region] === accountId) return;
+				if (configuredAccounts[forRegion] === accountId) return;
 				await settingsScope.set("accounts", {
 					...configuredAccounts,
-					[region]: accountId
+					[forRegion]: accountId
 				});
 			});
 			/** Open the add-account form, always in its idle state. */
@@ -1529,8 +1650,9 @@ function workBuddyDockClearance() {
 			const checkinCredit = typeof checkinState?.todayCredit === "number" ? checkinState.todayCredit : typeof checkinState?.dailyCredit === "number" ? checkinState.dailyCredit : void 0;
 			/** WorkBuddy Global has no daily check-in upstream, so its control is not offered. */
 			const supportsCheckin = region === "cn";
-			/** True when every pooled account of this provider already checked in today. */
-			const poolAllCheckedIn = accounts.length > 0 && accounts.every((account) => poolCheckin[account.id]?.todayCheckedIn === true);
+			/** Check-in exists on CN only, so "all checked in" only counts CN rows. */
+			const checkinCapableAccounts = accounts.filter((account) => account.region === "cn");
+			const poolAllCheckedIn = checkinCapableAccounts.length > 0 && checkinCapableAccounts.every((account) => poolCheckin[account.id]?.todayCheckedIn === true);
 			const poolCoolingCount = accounts.filter((account) => {
 				const until = poolHealth[account.id]?.until;
 				return typeof until === "number" && Number.isFinite(until) && until > Date.now();
@@ -1564,7 +1686,8 @@ function workBuddyDockClearance() {
 			const poolFirstTokenLabel = formatSidebarLatency(poolTotals.firstTokenMs) ?? "—";
 			const poolSpeedLabel = formatSidebarSpeed(poolTotals.tokensPerSecond) ?? "—";
 			const poolTokensLabel = formatSidebarTokens(poolTotals.totalTokens) ?? "—";
-			const selectedPoolAccount = accounts.find((account) => account.selected === true) ?? accounts[0];
+			/* the model column belongs to the region switch; the pool is shared */
+			const selectedPoolAccount = accounts.find((account) => account.region === region && account.selected === true) ?? accounts.find((account) => account.region === region);
 			const selectedPoolDetail = selectedPoolAccount === void 0 ? void 0 : poolDetails[selectedPoolAccount.id];
 			const selectedPackages = Array.isArray(selectedPoolDetail?.packages) ? [...selectedPoolDetail.packages].sort((left, right) => (Number.isFinite(right?.size) ? right.size : 0) - (Number.isFinite(left?.size) ? left.size : 0)) : [];
 			const accountName = typeof status?.accountName === "string" ? status.accountName : typeof status?.nickname === "string" ? status.nickname : void 0;
@@ -2075,27 +2198,18 @@ function workBuddyDockClearance() {
 							children: [
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "dsm-wb-side-label",
-									children: [
-										copy("pool"),
-										" ",
-										/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
-											className: "dsm-wb-side-pool-region",
-											children: region === "cn" ? "CN" : "AI"
-										}),
-										" ",
-										/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
-											className: "dsm-wb-side-count",
-											children: [String(accounts.length), copy("poolUnit")]
-										})
-									]
+									children: [copy("pool"), " ", /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
+										className: "dsm-wb-side-count",
+										children: [String(accounts.length), copy("poolUnit")]
+									})]
 								}),
 								/* @__PURE__ */ (0, react_jsx_runtime.jsxs)("span", {
 									className: "dsm-wb-side-actions",
 									children: [
-										!supportsCheckin ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+										checkinCapableAccounts.length === 0 ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 											type: "button",
 											className: "dsm-btn dsm-btn-outline dsm-wb-side-checkall",
-											disabled: busy !== "" || checkinAllBusy || poolAllCheckedIn || accounts.length === 0,
+											disabled: busy !== "" || checkinAllBusy || poolAllCheckedIn,
 											title: copy("checkinAll"),
 											onClick: () => checkinPool(),
 											children: checkinAllBusy ? copy("checkinAllBusy") : poolAllCheckedIn ? copy("checkinAllDone") : copy("checkinAll")
@@ -2267,7 +2381,7 @@ function workBuddyDockClearance() {
 							className: "dsm-wb-side-accounts",
 							children: accounts.map((account) => {
 								const isCurrent = account.selected === true;
-								const meta = [account.domain, !hideNames && typeof account.id === "string" ? account.id.slice(0, 8) : void 0].filter((part) => typeof part === "string" && part !== "").join(" \u00b7 ");
+								const meta = [account.domain, !hideNames && typeof account.accountId === "string" ? account.accountId.slice(0, 8) : void 0].filter((part) => typeof part === "string" && part !== "").join(" \u00b7 ");
 								const health = poolHealth[account.id];
 								const coolingUntil = formatSidebarCooling(health?.until);
 								const cooling = coolingUntil !== void 0;
@@ -2293,7 +2407,7 @@ function workBuddyDockClearance() {
 											"aria-pressed": isCurrent,
 											disabled: busy !== "",
 											title: isCurrent ? copy("acctCurrent") : copy("acctUse"),
-											onClick: () => switchAccount(account.id),
+											onClick: () => switchAccount(account),
 											children: [
 												/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 													className: "dsm-wb-side-acct-mark",
@@ -2305,7 +2419,12 @@ function workBuddyDockClearance() {
 													children: [
 														hideNames ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 															className: "dsm-wb-side-acct-name",
-															children: account.accountName ?? account.id ?? copy("acctUnknown")
+															children: account.accountName ?? account.accountId ?? copy("acctUnknown")
+														}),
+														/* which provider this row belongs to; the pool is shared now */
+														/* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
+															className: "dsm-wb-side-acct-region",
+															children: account.region === "cn" ? "CN" : "AI"
 														}),
 														meta === "" ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("span", {
 															className: "dsm-wb-side-acct-meta",
@@ -2365,11 +2484,11 @@ function workBuddyDockClearance() {
 													children: poolAccountCreditsLabel(poolCredits[account.id], poolDetails[account.id]?.creditsTotal),
 													"data-credits": typeof poolCredits[account.id] === "number" ? String(poolCredits[account.id]) : void 0
 												}),
-												!supportsCheckin ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
+												account.region !== "cn" ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 													type: "button",
 													className: "dsm-btn dsm-btn-outline dsm-wb-side-acct-check",
 													disabled: busy !== "" || checkinOneBusy !== "" || checkedInToday,
-													onClick: () => checkinPool(account.id),
+													onClick: () => checkinPool(account),
 													children: checkinOneBusy === account.id ? copy("checkinOneBusy") : checkedInToday ? copy("checkinOneDone") : copy("checkinOne")
 												})
 											]

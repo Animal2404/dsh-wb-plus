@@ -94,18 +94,44 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
   let loginPolls = 0;
   window.fetch = (url, init) => {
     const u = String(url);
+    /* the pool aggregates both providers, so its fixture must answer per region */
+    const regionOf = (u.match(/region=(cn|global)/) ?? [])[1] ?? 'cn';
     if (u.includes('/login/start')) return json({ state: 'st-fixture', url: 'https://www.codebuddy.cn/login?platform=CLI&state=st-fixture', region: 'cn' });
     if (u.includes('/login/poll')) return json(loginPolls++ === 0
       ? { done: false, pending: true, message: '11217:login ing...' }
       : { done: true, account: { id: 'a3', accountName: '新账号', domain: 'www.codebuddy.cn' } });
     if (u.includes('/pool/checkin')) return json({ results: [{ id: 'a1', ok: true }], checkedIn: 1, failed: 0 });
-    if (u.includes('/pool/stats')) return json({ stats: {
-      a1: { total: 12, successes: 11, failures: 1, inFlight: 1, lastSuccessAt: Date.now() - 90000 },
-      a2: { total: 6, successes: 6, failures: 0, inFlight: 0, lastSuccessAt: Date.now() - 7200000 },
-    }, totals: {
-      calls: 18, successes: 17, failures: 1, inFlight: 1,
-      firstTokenMs: 3120, tokensPerSecond: 117.6, totalTokens: 49230,
-    }, modelHealth: { a2: { 'deepseek-v4.1-flash': { kind: 'rate', until: MODEL_LIMIT_UNTIL, reason: '模型限流，稍后恢复' } } } });
+    if (u.includes('/pool/stats')) return regionOf === 'global'
+      ? json({ stats: {
+          g1: { total: 3, successes: 3, failures: 0, inFlight: 0, lastSuccessAt: Date.now() - 10800000 },
+        }, totals: {
+          calls: 3, successes: 3, failures: 0, inFlight: 0,
+          firstTokenMs: 1800, tokensPerSecond: 90, totalTokens: 12000,
+        }, modelHealth: {} })
+      : json({ stats: {
+          a1: { total: 12, successes: 11, failures: 1, inFlight: 1, lastSuccessAt: Date.now() - 90000 },
+          a2: { total: 6, successes: 6, failures: 0, inFlight: 0, lastSuccessAt: Date.now() - 7200000 },
+        }, totals: {
+          calls: 18, successes: 17, failures: 1, inFlight: 1,
+          firstTokenMs: 3120, tokensPerSecond: 117.6, totalTokens: 49230,
+        }, modelHealth: { a2: { 'deepseek-v4.1-flash': { kind: 'rate', until: MODEL_LIMIT_UNTIL, reason: '模型限流，稍后恢复' } } } });
+    if (u.includes('/pool/credits') && regionOf === 'global') return json({
+      accounts: [
+        { id: 'g1', credits: 380, creditsTotal: 380, packages: [
+          { packageName: '国际体验包', remain: 380, size: 380, monthly: false, expiresAtMs: Date.now() + 86400000 * 30 },
+        ], checkin: { active: false, todayCheckedIn: false } },
+      ],
+      health: {},
+      modelHealth: {},
+      cooling: 0,
+      stats: {
+        g1: { total: 3, successes: 3, failures: 0, inFlight: 0, lastSuccessAt: Date.now() - 10800000 },
+      },
+      totals: {
+        calls: 3, successes: 3, failures: 0, inFlight: 0,
+        firstTokenMs: 1800, tokensPerSecond: 90, totalTokens: 12000,
+      },
+    });
     if (u.includes('/pool/credits')) return json({
       accounts: [
         { id: 'a1', credits: 2098, creditsTotal: 2400, packages: [
@@ -161,13 +187,13 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
         { region: 'cn', calls: 81, failures: 0, promptTokens: 16920000, completionTokens: 35300, totalTokens: 16950000, avgLatencyMs: 5110, avgTokensPerSecond: 68.7, credits: 484.3, cacheHitTokens: 12000000, cacheMissTokens: 4920000, tokensPerCredit: 35000 },
       ],
     });
-    if (u.includes('/usage')) return json({ status: 'signed-in', accountName: 'Demo Account', nickname: 'Demo Account',
+    if (u.includes('/usage')) return json({ status: 'signed-in', accountName: 'Animal.', nickname: 'Animal.',
       credits: { total: 1197, packages: PACKAGES, expiringSoon: 0 },
       checkin: { todayCheckedIn: true, todayCredit: 100, dailyCredit: 100, streakDays: 3 },
       models: MODELS,
-      accounts: [ { id: 'a1', selected: false, accountName: 'Demo Account A', domain: 'www.workbuddy.cn', tokenExpiresAtMs: Date.now() + 86400000 * 41 },
-                  { id: 'a2', selected: true, accountName: 'Demo Account B', domain: 'www.workbuddy.cn', tokenExpiresAtMs: Date.now() + 86400000 * 41 } ] });
-    if (u.includes('/accounts/refresh')) return json({ accounts: [{ id: 'a2', selected: true, accountName: 'Demo Account B' }] });
+      accounts: [ { id: 'a1', selected: false, accountName: '13410447339', domain: 'www.workbuddy.cn', tokenExpiresAtMs: Date.now() + 86400000 * 41 },
+                  { id: 'a2', selected: true, accountName: 'Animal.', domain: 'www.workbuddy.cn', tokenExpiresAtMs: Date.now() + 86400000 * 41 } ] });
+    if (u.includes('/accounts/refresh')) return json({ accounts: [{ id: 'a2', selected: true, accountName: 'Animal.' }] });
     if (u.includes('/checkin')) return json({ ok: true });
     if (u.includes('/models/refresh')) return json({ models: MODELS });
     return Promise.resolve({ ok: false, status: 404, json: async () => ({ error: 'nf' }) });
