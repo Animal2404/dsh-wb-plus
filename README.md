@@ -1,7 +1,3 @@
-<p align="center">
-  <img src="docs/assets/workbuddy-usage-card.png" width="640" alt="dsh-wb-plus WorkBuddy panel" />
-</p>
-
 <h1 align="center">dsh-wb-plus</h1>
 
 <p align="center"><b>WorkBuddy 的社区增强版 DSH 接入：国内版 / 国际版双号池、积分、用量、模型档位与限流状态。</b></p>
