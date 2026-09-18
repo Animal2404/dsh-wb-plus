@@ -6,6 +6,7 @@ tools/wb-client.js
 tools/shot-model-health.png
 tools/shots/
 tools/.chrome-live-profile/
+tools/.chrome-live-account-focus/
 tools/chrome-prof-model-health/
 docs/assets/chrome-prof-*/
 *.log

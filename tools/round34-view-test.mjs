@@ -77,7 +77,6 @@ const read = await evaluate(`(() => {
   return {
     title: document.title,
     modelDefaults: Array.from(document.querySelectorAll('.dsm-wb-view-panel .dsm-wb-side-model-meta')).map((el) => el.textContent).filter((text) => text.includes('默认')),
-    poolRegion: document.querySelector('.dsm-wb-side-pool-region')?.textContent ?? null,
     poolLabel: poolLabel?.textContent ?? null,
     expiring: document.querySelector('.dsm-wb-side-pool-stat-expiring')?.textContent ?? null,
     tokenExpiry: Array.from(document.querySelectorAll('.dsm-wb-side-acct-token')).map((el) => el.textContent),
@@ -89,8 +88,7 @@ const read = await evaluate(`(() => {
 
 assert.equal(read.title, 'HARNESS PASS');
 assert.ok(read.modelDefaults.some((text) => text.includes('max')), 'a max-capable model shows max as its default effort');
-assert.equal(read.poolRegion, 'CN');
-assert.ok(read.poolLabel.includes('CN'));
+assert.ok(read.poolLabel.includes('账号'), 'the shared pool counts accounts from both providers');
 assert.ok(read.expiring !== null && read.expiring.includes('近 3 天到期'), 'the pool shows credits expiring within three days');
 assert.ok(read.tokenExpiry.length > 0 && read.tokenExpiry[0].includes('令牌到期'), 'account rows show token expiry');
 assert.equal(read.providerInModelCard, true, 'the provider switch moved onto the model card');

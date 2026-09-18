@@ -832,6 +832,12 @@ function workBuddyDockClearance() {
 			*/
 			const savedPrefs = (0, react.useCallback)(readPanelPreferences, [])();
 			const [region, setRegion] = (0, react.useState)(regionProp ?? (savedPrefs.region === "global" || savedPrefs.region === "cn" ? savedPrefs.region : "cn"));
+			/**
+			* Which pooled row is the visual focus for the shared card. The host
+			* still keeps one operational account per region for model routing, but
+			* the merged pool must present one current row and one credits readout.
+			*/
+			const [focusedAccountKey, setFocusedAccountKey] = (0, react.useState)(typeof savedPrefs.focusedAccount === "string" ? savedPrefs.focusedAccount : void 0);
 			/** Set a preference and remember it, so it survives remount and reload. */
 			const remember = (key, value) => writePanelPreference(key, value);
 			/* seed every one of these from the module cache: a remount (the user
@@ -1429,6 +1435,9 @@ function workBuddyDockClearance() {
 				   region switch - decides which account slot is written */
 				const forRegion = typeof account?.region === "string" ? account.region : region;
 				const accountId = account?.accountId ?? account?.id;
+				/* the merged card has one visual focus, remembered across remounts */
+				setFocusedAccountKey(account?.id);
+				remember("focusedAccount", account?.id);
 				const configured = settingsScope.getSnapshot().value ?? {};
 				const configuredAccounts = typeof configured.accounts === "object" && configured.accounts !== null ? configured.accounts : {};
 				if (configuredAccounts[forRegion] === accountId) return;
@@ -1436,7 +1445,26 @@ function workBuddyDockClearance() {
 					...configuredAccounts,
 					[forRegion]: accountId
 				});
+				/**
+				* The host is the authority on which account the store now resolves.
+				* Refresh immediately so the check mark and the left 积分 card move
+				* on the same click, instead of waiting for the 30s poll.
+				*/
+				await loadPoolCredits({
+					silent: true
+				});
+				await reload(forRegion).catch(() => {});
 			});
+			/**
+			* Switching the model region reloads that provider's status, whose
+			* accountName belongs to the MODEL route. The shared pool card must keep
+			* its own focused account, so reassert the stored focus after every
+			* region change. Without this the name snapped back to the other side.
+			*/
+			(0, react.useEffect)(() => {
+				const saved = readPanelPreferences().focusedAccount;
+				if (typeof saved === "string" && saved !== "") setFocusedAccountKey(saved);
+			}, [region]);
 			/** Open the add-account form, always in its idle state. */
 			const openAdd = () => {
 				setAddError(void 0);
@@ -1644,12 +1672,19 @@ function workBuddyDockClearance() {
 					model: modelId
 				});
 			});
-			const credits = status !== null && typeof status === "object" ? status.credits : void 0;
-			const checkinState = status !== null && typeof status === "object" ? status.checkin : void 0;
-			const totalCredit = typeof credits?.total === "number" && Number.isFinite(credits.total) ? credits.total : void 0;
+			/**
+			* The 积分 card follows the shared pool's selected account, not the
+			* model-region switch. Switching 国内/国际 changes only the model list;
+			* it must not make the left-hand credits jump to another account.
+			*/
+			const focusedPoolAccount = accounts.find((account) => account.id === focusedAccountKey) ?? accounts.find((account) => account.selected === true) ?? accounts[0];
+			const selectedPoolDetail = focusedPoolAccount === void 0 ? void 0 : poolDetails[focusedPoolAccount.id];
+			const selectedPackages = Array.isArray(selectedPoolDetail?.packages) ? [...selectedPoolDetail.packages].sort((left, right) => (Number.isFinite(right?.size) ? right.size : 0) - (Number.isFinite(left?.size) ? left.size : 0)) : [];
+			const totalCredit = focusedPoolAccount === void 0 ? void 0 : poolCredits[focusedPoolAccount.id];
+			const checkinState = focusedPoolAccount === void 0 ? void 0 : poolCheckin[focusedPoolAccount.id];
 			const checkinCredit = typeof checkinState?.todayCredit === "number" ? checkinState.todayCredit : typeof checkinState?.dailyCredit === "number" ? checkinState.dailyCredit : void 0;
-			/** WorkBuddy Global has no daily check-in upstream, so its control is not offered. */
-			const supportsCheckin = region === "cn";
+			/** Check-in is available only when the selected pooled account is CN. */
+			const supportsCheckin = focusedPoolAccount?.region === "cn";
 			/** Check-in exists on CN only, so "all checked in" only counts CN rows. */
 			const checkinCapableAccounts = accounts.filter((account) => account.region === "cn");
 			const poolAllCheckedIn = checkinCapableAccounts.length > 0 && checkinCapableAccounts.every((account) => poolCheckin[account.id]?.todayCheckedIn === true);
@@ -1687,11 +1722,9 @@ function workBuddyDockClearance() {
 			const poolSpeedLabel = formatSidebarSpeed(poolTotals.tokensPerSecond) ?? "—";
 			const poolTokensLabel = formatSidebarTokens(poolTotals.totalTokens) ?? "—";
 			/* the model column belongs to the region switch; the pool is shared */
-			const selectedPoolAccount = accounts.find((account) => account.region === region && account.selected === true) ?? accounts.find((account) => account.region === region);
-			const selectedPoolDetail = selectedPoolAccount === void 0 ? void 0 : poolDetails[selectedPoolAccount.id];
-			const selectedPackages = Array.isArray(selectedPoolDetail?.packages) ? [...selectedPoolDetail.packages].sort((left, right) => (Number.isFinite(right?.size) ? right.size : 0) - (Number.isFinite(left?.size) ? left.size : 0)) : [];
-			const accountName = typeof status?.accountName === "string" ? status.accountName : typeof status?.nickname === "string" ? status.nickname : void 0;
-			const signedIn = status?.status === "signed-in";
+			const modelRegionAccount = accounts.find((account) => account.region === region && account.selected === true) ?? accounts.find((account) => account.region === region);
+			const accountName = focusedPoolAccount?.accountName;
+			const signedIn = focusedPoolAccount !== void 0 || status?.status === "signed-in";
 			const group = groups.find((entry) => entry.id === provider);
 			/**
 			* The picker shows what this provider actually fetched, in the upstream's
@@ -2178,8 +2211,8 @@ function workBuddyDockClearance() {
 						!supportsCheckin ? null : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("button", {
 							type: "button",
 							className: "dsm-btn dsm-btn-primary dsm-wb-side-block",
-							disabled: busy !== "" || !signedIn,
-							onClick: checkin,
+							disabled: busy !== "" || !signedIn || focusedPoolAccount === void 0,
+							onClick: () => checkinPool(focusedPoolAccount),
 							children: busy === "checkin" ? copy("checkingIn") : checkinState?.todayCheckedIn === true ? copy("checkinDone") : copy("checkin")
 						})
 					]
@@ -2380,7 +2413,7 @@ function workBuddyDockClearance() {
 						}) : /* @__PURE__ */ (0, react_jsx_runtime.jsx)("div", {
 							className: "dsm-wb-side-accounts",
 							children: accounts.map((account) => {
-								const isCurrent = account.selected === true;
+								const isCurrent = focusedPoolAccount?.id === account.id;
 								const meta = [account.domain, !hideNames && typeof account.accountId === "string" ? account.accountId.slice(0, 8) : void 0].filter((part) => typeof part === "string" && part !== "").join(" \u00b7 ");
 								const health = poolHealth[account.id];
 								const coolingUntil = formatSidebarCooling(health?.until);
@@ -2596,7 +2629,7 @@ function workBuddyDockClearance() {
 								const busyNow = busy !== "";
 								const reasoningTag = reasoningTagOf(model);
 								const reasoningDefault = displayDefaultEffortOf(model);
-								const modelHealth = selectedPoolAccount === void 0 ? void 0 : poolModelHealth[selectedPoolAccount.id]?.[model.id];
+								const modelHealth = modelRegionAccount === void 0 ? void 0 : poolModelHealth[modelRegionAccount.id]?.[model.id];
 								const modelLimitUntil = formatSidebarCooling(modelHealth?.until);
 								return /* @__PURE__ */ (0, react_jsx_runtime.jsxs)("div", {
 									className: isEnabled ? "dsm-wb-side-model dsm-wb-side-model-on" : "dsm-wb-side-model",

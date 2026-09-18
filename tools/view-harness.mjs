@@ -119,7 +119,7 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
       accounts: [
         { id: 'g1', credits: 380, creditsTotal: 380, packages: [
           { packageName: '国际体验包', remain: 380, size: 380, monthly: false, expiresAtMs: Date.now() + 86400000 * 30 },
-        ], checkin: { active: false, todayCheckedIn: false } },
+        ], checkin: { active: false, todayCheckedIn: false }, selected: true, tokenExpiresAtMs: Date.now() + 86400000 * 41 },
       ],
       health: {},
       modelHealth: {},
@@ -139,11 +139,10 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
           { packageName: '日常赠送包', remain: 898, size: 1200, monthly: true, cycleRefreshMs: Date.now() + 86400000 * 14 },
           { packageName: '临期包', remain: 94, size: 500, monthly: false, expiresAtMs: Date.now() + 86400000 * 2 },
         ], checkin: { active: true, todayCheckedIn: false, todayCredit: 100, dailyCredit: 100, streakDays: 3 },
-          health: { kind: 'rate', until: COOL_UNTIL, reason: '频率限制，请在 2026-09-17 21:30:00 后重试' } },
+          health: { kind: 'rate', until: COOL_UNTIL, reason: '频率限制，请在 2026-09-17 21:30:00 后重试' }, selected: false, tokenExpiresAtMs: Date.now() + 86400000 * 41 },
         { id: 'a2', credits: 1197, creditsTotal: 1500, packages: [
           { packageName: '续费礼包', remain: 1197, size: 1500, monthly: true, cycleRefreshMs: Date.now() + 86400000 * 20 },
-        ], checkin: { active: true, todayCheckedIn: true, todayCredit: 100, dailyCredit: 100, streakDays: 1 },
-        },
+        ], checkin: { active: true, todayCheckedIn: true, todayCredit: 100, dailyCredit: 100, streakDays: 1 }, selected: true, tokenExpiresAtMs: Date.now() + 86400000 * 41 },
       ],
       health: { a1: { kind: 'rate', until: COOL_UNTIL, reason: '频率限制' } },
       modelHealth: { a2: { 'deepseek-v4.1-flash': { kind: 'rate', until: MODEL_LIMIT_UNTIL, reason: '模型限流，稍后恢复' } } },
@@ -233,9 +232,15 @@ const html = `<!doctype html><html lang="zh"><head><meta charset="utf-8"><title>
     const groups = [{ id: 'workbuddy', name: 'WorkBuddy', models: MODELS }];
     const modelDirectories = { directoryFor: () => ({ load: async () => {}, select: async () => {},
       store: { getSnapshot: () => ({ groups, current: { provider: 'workbuddy', model: 'deepseek-v4.1-flash' } }) } }) };
+    let settings = { accounts: { cn: 'a2', global: 'g1' }, regions: {} };
+    const settingsScope = {
+      getSnapshot: () => ({ writable: true, value: settings }),
+      set: async (key, value) => { settings = { ...settings, [key]: value }; },
+    };
     const props = { t: void 0, modelDirectories,
       useSessions: (selector) => selector({ current: 'sess-1' }),
-      settingsScope: { get: () => undefined, set: async () => {} }, region: 'cn' };
+      settingsScope, region: 'cn' };
+    window.__wbHarness = { props };
     ReactDOM.createRoot(document.getElementById('host')).render(React.createElement(entry.Comp, props));
     setTimeout(measure, 1500);
   }

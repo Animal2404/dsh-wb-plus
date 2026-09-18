@@ -24,7 +24,7 @@ const deps = {
   store: () => ({
     readAll: async () => credentials,
     /* the fast path reads these two directly, so the stub must provide them */
-    accounts: async () => credentials.map((c, i) => ({ id: `acct-${i}`, selected: i === 0, accountName: c.nickname, domain: c.domain })),
+    accounts: async () => credentials.map((c, i) => ({ id: mod.workbuddyAccountId(c), selected: i === 0, accountName: c.nickname, domain: c.domain })),
     status: async () => ({ state: 'signed-in' }),
     current: async () => credentials[0],
     resolve: async () => credentials[0],
@@ -86,6 +86,8 @@ console.log('  accounts:', JSON.stringify(credits.parsed?.accounts));
 console.log('  health:', JSON.stringify(credits.parsed?.health), 'cooling:', credits.parsed?.cooling);
 console.log('  modelHealth:', JSON.stringify(credits.parsed?.modelHealth));
 console.log('  stats:', JSON.stringify(credits.parsed?.stats));
+assert.default.equal(credits.status, 200);
+assert.default.equal(credits.parsed.accounts.filter((account) => account.selected === true).length, 1, 'the pool response marks exactly one account selected');
 
 const stats = await call('/pool/stats', 'GET');
 console.log('\nGET /pool/stats ->', stats.status, JSON.stringify(stats.parsed));

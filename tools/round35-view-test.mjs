@@ -48,6 +48,13 @@ ws.onmessage = (event) => {
   if (message.id && pending.has(message.id)) {
     pending.get(message.id)(message);
     pending.delete(message.id);
+    return;
+  }
+  if (message.method === 'Runtime.exceptionThrown') {
+    console.error('PAGE EXCEPTION:', message.params.exceptionDetails.exception?.description ?? message.params.exceptionDetails.text);
+  }
+  if (message.method === 'Runtime.consoleAPICalled' && message.params.type === 'error') {
+    console.error('PAGE CONSOLE ERROR:', (message.params.args ?? []).map((arg) => arg.value ?? arg.description).join(' '));
   }
 };
 function send(method, params = {}) {
@@ -91,6 +98,49 @@ assert.ok(read.accountNames.length >= 3, 'the pool aggregates accounts from both
 assert.ok(read.poolSummary.includes('3'), 'the pool summary counts both providers');
 assert.equal(read.providerInModelCard, true, 'the region switch stays on the model card');
 assert.ok(read.panelOverflow[0] <= read.panelOverflow[1]);
+
+/* Clicking a pooled account must visibly select it. The host now supplies the
+   selected flag; this exercises the client's merge + row rendering end to end. */
+const selectedAfterClick = await evaluate(`(async () => {
+  const rows = Array.from(document.querySelectorAll('.dsm-wb-side-acct'));
+  const target = rows.find((row) => row.querySelector('.dsm-wb-side-acct-region')?.textContent === 'CN' && row.getAttribute('data-current') !== 'true')
+    ?? rows.find((row) => row.getAttribute('data-current') !== 'true');
+  if (!target) return { error: 'no unselected account row' };
+  const name = target.querySelector('.dsm-wb-side-acct-name')?.textContent ?? null;
+  target.querySelector('.dsm-wb-side-acct-pick')?.click();
+  await new Promise((resolve) => setTimeout(resolve, 700));
+  return {
+    name,
+    currentNames: Array.from(document.querySelectorAll('.dsm-wb-side-acct[data-current="true"] .dsm-wb-side-acct-name')).map((el) => el.textContent),
+    currentCount: document.querySelectorAll('.dsm-wb-side-acct[data-current="true"]').length,
+    ariaPressed: target.querySelector('.dsm-wb-side-acct-pick')?.getAttribute('aria-pressed'),
+  };
+})()`);
+assert.equal(selectedAfterClick.error, undefined, 'there is a clickable pooled account row');
+assert.equal(selectedAfterClick.currentCount, 1, 'exactly one pooled account is selected after the click');
+assert.equal(selectedAfterClick.currentNames[0], selectedAfterClick.name, 'the clicked account is the selected one');
+assert.equal(selectedAfterClick.ariaPressed, 'true', 'the clicked row reports aria-pressed=true');
+
+/* The model-region switch changes only the model list. The left credits card
+   follows the selected pool account and must keep its numbers. */
+const creditsBefore = await evaluate(`(() => ({
+  account: document.querySelector('.dsm-wb-side-group-credits .dsm-wb-side-account-name')?.textContent ?? null,
+  values: Array.from(document.querySelectorAll('.dsm-wb-side-group-credits .dsm-wb-side-credit-value')).map((el) => el.textContent),
+}))()`);
+const switched = await evaluate(`(async () => {
+  const buttons = Array.from(document.querySelectorAll('.dsm-wb-side-group-models .dsm-workbuddy-tab'));
+  const target = buttons.find((button) => button.textContent.trim() === '国际版');
+  if (!target) return false;
+  target.click();
+  await new Promise((resolve) => setTimeout(resolve, 900));
+  return true;
+})()`);
+assert.equal(switched, true, 'the model-region switch is present');
+const creditsAfter = await evaluate(`(() => ({
+  account: document.querySelector('.dsm-wb-side-group-credits .dsm-wb-side-account-name')?.textContent ?? null,
+  values: Array.from(document.querySelectorAll('.dsm-wb-side-group-credits .dsm-wb-side-credit-value')).map((el) => el.textContent),
+}))()`);
+assert.deepEqual(creditsAfter, creditsBefore, 'switching the model region does not change the left credits card');
 
 await evaluate(`document.getElementById('probe').style.display = 'none'; 'hidden'`);
 await send('Page.captureScreenshot', { format: 'png' }).then((result) => fs.writeFileSync(`${OUT}/shot-round35.png`, Buffer.from(result.data, 'base64')));
